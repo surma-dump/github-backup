@@ -4,18 +4,89 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dutchcoders/goftp"
+	"github.com/garyburd/redigo/redis"
+)
+
+var (
+	sshKey    = flag.String("key", "", "SSH key to use for cloning")
+	ftpUrl    = flag.String("ftp", "", "FTP server to save backups to")
+	redisUrl  = flag.String("redis", "", "Address of redis")
+	frequency = flag.Duration("frequency", 24*time.Hour, "Frequency of backups")
+	help      = flag.Bool("help", false, "Show this help")
 )
 
 func main() {
+	flag.Parse()
+	if *help {
+		flag.PrintDefaults()
+		return
+	}
+	if *ftpUrl == "" || *sshKey == "" || *redisUrl == "" {
+		log.Fatalf("-ftp, -key und -redis have to be set")
+	}
+
+	redisConn, err := connectRedis(*redisUrl)
+	if err != nil {
+		log.Fatalf("Could not connect to redis: %s", err)
+	}
+	defer redisConn.Close()
+
+	ftpConn, err := connectFtp(*ftpUrl)
+	if err != nil {
+		log.Fatalf("Could not connect to FTP server: %s", err)
+	}
+	defer ftpConn.Close()
+}
+
+func connectRedis(s string) (redis.Conn, error) {
+	redisUrl, err := url.Parse(s)
+	if err != nil {
+		return nil, fmt.Errorf("Could not parse redis url: %s", err)
+	}
+	if redisUrl.Scheme != "redis" {
+		return nil, fmt.Errorf("Unsupported redis scheme %s", redisUrl.Scheme)
+	}
+
+	return redis.Dial("tcp", redisUrl.Host)
+}
+
+func connectFtp(s string) (*goftp.FTP, error) {
+	ftpUrl, err := url.Parse(s)
+	if err != nil {
+		log.Fatalf("Invalid ftp url: %s", err)
+	}
+	if ftpUrl.Scheme != "ftp" {
+		log.Fatalf("Unsupported target scheme %s", ftpUrl.Scheme)
+	}
+	if !strings.Contains(ftpUrl.Host, ":") {
+		ftpUrl.Host += ":21"
+	}
+
+	ftp, err := goftp.Connect(ftpUrl.Host)
+	if err != nil {
+		return ftp, err
+	}
+	if ftpUrl.User == nil {
+		return ftp, err
+	}
+	user := ftpUrl.User.Username()
+	pass, _ := ftpUrl.User.Password()
+	return ftp, ftp.Login(user, pass)
+}
+
+func tmp() {
 	buf, err := downloadRepository("surma/phrank")
 	if err != nil {
 		log.Fatalf("Could not download: %s", err)
