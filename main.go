@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dutchcoders/goftp"
 )
 
 func main() {
@@ -19,12 +21,18 @@ func main() {
 		log.Fatalf("Could not download: %s", err)
 	}
 
-	f, err := os.Create("bla.tar.gz")
+	ftp, err := goftp.Connect("10.0.0.2:21")
 	if err != nil {
-		log.Fatalf("Could not create output file: %s", err)
+		log.Fatalf("Could not connect to ftp: %s", err)
 	}
-	defer f.Close()
-	io.Copy(f, bytes.NewReader(buf.Bytes()))
+	defer ftp.Close()
+	if err := ftp.Login("surma", ""); err != nil {
+		log.Fatalf("Could not login: %s", err)
+	}
+	if err := ftp.Stor("/Scratch/tmp.tar.gz", buf); err != nil {
+		log.Fatalf("Could not upload: %s", err)
+	}
+
 }
 
 func downloadRepository(path string) (*bytes.Buffer, error) {
