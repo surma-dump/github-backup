@@ -259,7 +259,7 @@ func tarDir(root string) (*bytes.Buffer, error) {
 
 const (
 	sshConfig = `
-	IdentityFile ~/.ssh/id-rsa
+	IdentityFile /root/.ssh/github-backup
 	StrictHostKeyChecking no
 	`
 )
@@ -281,14 +281,14 @@ func addSshKey(encKey string) error {
 	if err != nil {
 		return fmt.Errorf("Error decoding key: %s", err)
 	}
-	if err := os.MkdirAll(os.ExpandEnv("$HOME/.ssh"), os.FileMode(0700)); err != nil {
+	if err := os.MkdirAll("/root/.ssh", os.FileMode(0700)); err != nil {
 		return fmt.Errorf("Error creating .ssh folder: %s", err)
 	}
 
-	if err := writeFile(os.ExpandEnv("$HOME/.ssh/id-rsa"), key); err != nil {
+	if err := writeFile("/root/.ssh/github-backup", key); err != nil {
 		return err
 	}
-	if err := writeFile(os.ExpandEnv("$HOME/.ssh/config"), []byte(sshConfig)); err != nil {
+	if err := writeFile("/root/.ssh/config", []byte(sshConfig)); err != nil {
 		return err
 	}
 	return nil
