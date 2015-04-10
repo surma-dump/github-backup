@@ -281,14 +281,14 @@ func addSshKey(encKey string) error {
 	if err != nil {
 		return fmt.Errorf("Error decoding key: %s", err)
 	}
-	if err := os.MkdirAll("~/.ssh", os.FileMode(0700)); err != nil {
+	if err := os.MkdirAll(os.ExpandEnv("$HOME/.ssh"), os.FileMode(0700)); err != nil {
 		return fmt.Errorf("Error creating .ssh folder: %s", err)
 	}
 
-	if err := writeFile("~/.ssh/id-rsa", key); err != nil {
+	if err := writeFile(os.ExpandEnv("$HOME/.ssh/id-rsa"), key); err != nil {
 		return err
 	}
-	if err := writeFile("~/.ssh/config", []byte(sshConfig)); err != nil {
+	if err := writeFile(os.ExpandEnv("$HOME/.ssh/config"), []byte(sshConfig)); err != nil {
 		return err
 	}
 	return nil
