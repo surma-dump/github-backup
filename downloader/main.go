@@ -257,14 +257,37 @@ func tarDir(root string) (*bytes.Buffer, error) {
 	return buf, nil
 }
 
+const (
+	sshConfig = `IdentityFile ~/.ssh/id-rsa
+	`
+)
+
+func writeFile(path string, content []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, os.FileMode(0700))
+	if err != nil {
+		return fmt.Errorf("Error creating file %s: %s", path, err)
+	}
+	defer f.Close()
+	if _, err := f.Write(content); err != nil {
+		return fmt.Errorf("Error writing file %s: %s", path, err)
+	}
+	return nil
+}
+
 func addSshKey(encKey string) error {
 	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
+		return fmt.Errorf("Error decoding key: %s", err)
+	}
+	if err := os.MkdirAll("~/.ssh", os.FileMode(0700)); err != nil {
+		return fmt.Errorf("Error creating .ssh folder: %s", err)
+	}
+
+	if err := writeFile("~/.ssh/id-rsa", key); err != nil {
 		return err
 	}
-	cmd := exec.Command("ssh-add", "-")
-	cmd.Stdin = bytes.NewReader(key)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := writeFile("~/.ssh/config", []byte(sshConfig)); err != nil {
+		return err
+	}
+	return nil
 }
