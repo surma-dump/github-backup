@@ -25,11 +25,12 @@ var (
 	ftpUrl    = flag.String("ftp", "", "FTP server to save backups to")
 	redisUrl  = flag.String("redis", "", "Address of redis")
 	frequency = flag.Duration("frequency", 24*time.Hour, "Frequency of backups")
+	force     = flag.Bool("force", false, "Force download")
 	help      = flag.Bool("help", false, "Show this help")
 )
 
 var (
-	badCharacters = regexp.MustCompilePOSIX("[/:!?*\\&]")
+	badCharacters = regexp.MustCompilePOSIX("[/@:!?*\\&]")
 )
 
 func main() {
@@ -48,18 +49,24 @@ func main() {
 	}
 	defer redisConn.Close()
 
-	ftpConn, err := connectFtp(*ftpUrl)
+	ftpConn, ftpUrl, err := connectFtp(*ftpUrl)
 	if err != nil {
 		log.Fatalf("Could not connect to FTP server: %s", err)
 	}
 	defer ftpConn.Close()
+	if err := ftpConn.Cwd(ftpUrl.Path); err != nil {
+		log.Fatalf("Could not cd to target directory: %s", err)
+	}
 
 	for {
-		nextRun := lastRun(redisConn).Add(*frequency)
-		if nextRun.After(time.Now()) {
-			time.Sleep(nextRun.Sub(time.Now()))
-			continue
+		if !*force {
+			nextRun := lastRun(redisConn).Add(*frequency)
+			if nextRun.After(time.Now()) {
+				time.Sleep(nextRun.Sub(time.Now()))
+				continue
+			}
 		}
+		*force = false
 
 		log.Printf("Downloading all the repos...")
 		repos := repos(redisConn)
@@ -150,7 +157,7 @@ func connectRedis(s string) (redis.Conn, error) {
 	return conn, err
 }
 
-func connectFtp(s string) (*goftp.FTP, error) {
+func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
 	ftpUrl, err := url.Parse(s)
 	if err != nil {
 		log.Fatalf("Invalid ftp url: %s", err)
@@ -164,17 +171,14 @@ func connectFtp(s string) (*goftp.FTP, error) {
 
 	ftp, err := goftp.Connect(ftpUrl.Host)
 	if err != nil {
-		return ftp, err
+		return ftp, ftpUrl, err
 	}
 	if ftpUrl.User == nil {
-		return ftp, err
+		return ftp, ftpUrl, err
 	}
 	user := ftpUrl.User.Username()
 	pass, _ := ftpUrl.User.Password()
-	return ftp, ftp.Login(user, pass)
-}
-
-func tmp() {
+	return ftp, ftpUrl, ftp.Login(user, pass)
 }
 
 func downloadRepository(path string) (*bytes.Buffer, error) {
