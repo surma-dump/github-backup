@@ -258,7 +258,9 @@ func tarDir(root string) (*bytes.Buffer, error) {
 }
 
 const (
-	sshConfig = `IdentityFile ~/.ssh/id-rsa
+	sshConfig = `
+	IdentityFile ~/.ssh/id-rsa
+	StrictHostKeyChecking no
 	`
 )
 
