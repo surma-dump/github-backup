@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -254,8 +255,12 @@ func tarDir(root string) (*bytes.Buffer, error) {
 	return buf, nil
 }
 
-func addSshKey(key string) error {
+func addSshKey(encKey string) error {
+	key, err := base64.StdEncoding.DecodeString(encKey)
+	if err != nil {
+		return err
+	}
 	cmd := exec.Command("ssh-add", "-")
-	cmd.Stdin = strings.NewReader(key)
+	cmd.Stdin = bytes.NewReader(key)
 	return cmd.Run()
 }
