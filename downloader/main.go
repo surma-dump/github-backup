@@ -43,6 +43,12 @@ func main() {
 		log.Fatalf("-ftp and -redis have to be set")
 	}
 
+	if *sshKey != "" {
+		if err := addSshKey(*sshKey); err != nil {
+			log.Fatalf("Could not add SSH key: %s", err)
+		}
+	}
+
 	redisConn, err := connectRedis(*redisUrl)
 	if err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
@@ -246,4 +252,10 @@ func tarDir(root string) (*bytes.Buffer, error) {
 		return nil, err
 	}
 	return buf, nil
+}
+
+func addSshKey(key string) error {
+	cmd := exec.Command("ssh-add", "-")
+	cmd.Stdin = strings.NewReader(key)
+	return cmd.Run()
 }
