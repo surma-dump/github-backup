@@ -39,8 +39,8 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-	if *ftpUrl == "" || *sshKey == "" || *redisUrl == "" {
-		log.Fatalf("-ftp, -key und -redis have to be set")
+	if *ftpUrl == "" || *redisUrl == "" {
+		log.Fatalf("-ftp and -redis have to be set")
 	}
 
 	redisConn, err := connectRedis(*redisUrl)
