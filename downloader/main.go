@@ -198,6 +198,8 @@ func downloadRepository(path string) (*bytes.Buffer, error) {
 
 	cmd := exec.Command("git", "clone", "--bare", path)
 	cmd.Dir = repo
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
@@ -262,5 +264,7 @@ func addSshKey(encKey string) error {
 	}
 	cmd := exec.Command("ssh-add", "-")
 	cmd.Stdin = bytes.NewReader(key)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
