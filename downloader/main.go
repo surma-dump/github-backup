@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ var (
 	redisUrl  = flag.String("redis", "", "Address of redis")
 	frequency = flag.Duration("frequency", 24*time.Hour, "Frequency of backups")
 	help      = flag.Bool("help", false, "Show this help")
+)
+
+var (
+	badCharacters = regexp.MustCompilePOSIX("[/:!?*\\&]")
 )
 
 func main() {
@@ -48,6 +53,74 @@ func main() {
 		log.Fatalf("Could not connect to FTP server: %s", err)
 	}
 	defer ftpConn.Close()
+
+	for {
+		nextRun := lastRun(redisConn).Add(*frequency)
+		if nextRun.After(time.Now()) {
+			time.Sleep(nextRun.Sub(time.Now()))
+			continue
+		}
+
+		log.Printf("Downloading all the repos...")
+		repos := repos(redisConn)
+		for _, repo := range repos {
+			log.Printf("Downloading %s...", repo)
+			safeName := badCharacters.ReplaceAllString(repo, "_")
+			buf, err := downloadRepository(repo)
+			if err != nil {
+				log.Printf("Error downloading repository: %s", err)
+				continue
+			}
+
+			if err := ftpConn.Stor(safeName+".tar.gz", buf); err != nil {
+				log.Printf("Error uploading: %s", err)
+			}
+		}
+		log.Printf("Finished.")
+		timestampLastRun(redisConn)
+	}
+}
+
+func lastRun(conn redis.Conn) time.Time {
+	ok, err := redis.Bool(conn.Do("EXISTS", "github-backup:lastrun"))
+	if err != nil {
+		log.Fatalf("Error querying database: %s", err)
+	}
+	if !ok {
+		return time.Unix(0, 0)
+	}
+
+	ts, err := redis.String(conn.Do("GET", "github-backup:lastrun"))
+	if err != nil {
+		log.Fatalf("Error retrieving timestamp: %s", err)
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		log.Fatalf("Error parsing timestamp: %s", err)
+	}
+	return t
+}
+
+func timestampLastRun(conn redis.Conn) {
+	_, err := conn.Do("SET", "github-backup:lastrun", time.Now().Format(time.RFC3339))
+	if err != nil {
+		log.Fatalf("Error writing timestamp: %s", err)
+	}
+}
+
+func repos(conn redis.Conn) []string {
+	repos, err := redis.Values(conn.Do("LRANGE", "github-backup:repos", 0, 1000))
+	if err == redis.ErrNil {
+		return []string{}
+	}
+	if err != nil {
+		log.Fatalf("Error retrieving repo list: %s", err)
+	}
+	r := make([]string, 0, len(repos))
+	if err := redis.ScanSlice(repos, &r); err != nil {
+		log.Fatalf("Error parsing repo list: %s", err)
+	}
+	return r
 }
 
 func connectRedis(s string) (redis.Conn, error) {
@@ -59,7 +132,22 @@ func connectRedis(s string) (redis.Conn, error) {
 		return nil, fmt.Errorf("Unsupported redis scheme %s", redisUrl.Scheme)
 	}
 
-	return redis.Dial("tcp", redisUrl.Host)
+	conn, err := redis.Dial("tcp", redisUrl.Host)
+	if err != nil {
+		return conn, err
+	}
+	if redisUrl.User != nil {
+		pass, ok := redisUrl.User.Password()
+		if !ok {
+			pass = redisUrl.User.Username()
+		}
+		_, err := conn.Do("AUTH", pass)
+		if err != nil {
+			return conn, err
+		}
+	}
+	_, err = conn.Do("EXISTS", "github-backup:lastrun")
+	return conn, err
 }
 
 func connectFtp(s string) (*goftp.FTP, error) {
@@ -87,23 +175,6 @@ func connectFtp(s string) (*goftp.FTP, error) {
 }
 
 func tmp() {
-	buf, err := downloadRepository("surma/phrank")
-	if err != nil {
-		log.Fatalf("Could not download: %s", err)
-	}
-
-	ftp, err := goftp.Connect("10.0.0.2:21")
-	if err != nil {
-		log.Fatalf("Could not connect to ftp: %s", err)
-	}
-	defer ftp.Close()
-	if err := ftp.Login("surma", ""); err != nil {
-		log.Fatalf("Could not login: %s", err)
-	}
-	if err := ftp.Stor("/Scratch/tmp.tar.gz", buf); err != nil {
-		log.Fatalf("Could not upload: %s", err)
-	}
-
 }
 
 func downloadRepository(path string) (*bytes.Buffer, error) {
@@ -114,7 +185,7 @@ func downloadRepository(path string) (*bytes.Buffer, error) {
 	}
 	defer os.RemoveAll(repo)
 
-	cmd := exec.Command("git", "clone", "--bare", fmt.Sprintf("git@github.com:%s", path))
+	cmd := exec.Command("git", "clone", "--bare", path)
 	cmd.Dir = repo
 	if err := cmd.Run(); err != nil {
 		return nil, err
