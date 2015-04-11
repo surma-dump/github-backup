@@ -19,6 +19,8 @@ import (
 
 	"github.com/dutchcoders/goftp"
 	"github.com/garyburd/redigo/redis"
+
+	"../common"
 )
 
 var (
@@ -50,7 +52,7 @@ func main() {
 		}
 	}
 
-	redisConn, err := connectRedis(*redisUrl)
+	redisConn, err := common.ConnectRedis(*redisUrl)
 	if err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
@@ -135,33 +137,6 @@ func repos(conn redis.Conn) []string {
 		log.Fatalf("Error parsing repo list: %s", err)
 	}
 	return r
-}
-
-func connectRedis(s string) (redis.Conn, error) {
-	redisUrl, err := url.Parse(s)
-	if err != nil {
-		return nil, fmt.Errorf("Could not parse redis url: %s", err)
-	}
-	if redisUrl.Scheme != "redis" {
-		return nil, fmt.Errorf("Unsupported redis scheme %s", redisUrl.Scheme)
-	}
-
-	conn, err := redis.Dial("tcp", redisUrl.Host)
-	if err != nil {
-		return conn, err
-	}
-	if redisUrl.User != nil {
-		pass, ok := redisUrl.User.Password()
-		if !ok {
-			pass = redisUrl.User.Username()
-		}
-		_, err := conn.Do("AUTH", pass)
-		if err != nil {
-			return conn, err
-		}
-	}
-	_, err = conn.Do("EXISTS", "github-backup:lastrun")
-	return conn, err
 }
 
 func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
