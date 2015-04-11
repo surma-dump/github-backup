@@ -19,8 +19,7 @@ import (
 
 	"github.com/dutchcoders/goftp"
 	"github.com/garyburd/redigo/redis"
-
-	"../common"
+	"github.com/surma-dump/github-backup/common"
 )
 
 var (
@@ -125,7 +124,7 @@ func timestampLastRun(conn redis.Conn) {
 }
 
 func repos(conn redis.Conn) []string {
-	repos, err := redis.Values(conn.Do("LRANGE", "github-backup:repos", 0, 1000))
+	repos, err := redis.Values(conn.Do("SMEMBERS", "github-backup:repos"))
 	if err == redis.ErrNil {
 		return []string{}
 	}
