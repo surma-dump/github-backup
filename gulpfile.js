@@ -50,26 +50,29 @@ gulp.task('styles', function () {
 
 gulp.task('static', function() {
   var assets = $.useref.assets({
-    searchPath: ['static', '.tmp'],
+    searchPath: ['.tmp', 'static'],
   });
 
   return gulp.src([
     'static/index.html'
   ])
+    .pipe($.vulcanize({
+      dest: 'dist'
+    }))
     .pipe(assets)
     .pipe($.if('*.js', $.uglify()))
     .pipe($.if('*.css', $.csso()))
     .pipe(assets.restore())
     .pipe($.useref())
-    .pipe($.htmlmin({
-      removeComments: true,
-      collapseWhitespace: true,
-      removeAttributeQuotes: true,
-      removeRedundantAttributes: true,
-      removeEmptyAttributes: true,
-      removeScriptTypeAttributes: true,
-      removeStyleLinkTypeAttributes: true
-    }))
+    // .pipe($.htmlmin({
+    //   removeComments: true,
+    //   collapseWhitespace: true,
+    //   removeAttributeQuotes: true,
+    //   removeRedundantAttributes: true,
+    //   removeEmptyAttributes: true,
+    //   removeScriptTypeAttributes: true,
+    //   removeStyleLinkTypeAttributes: true
+    // }))
     .pipe(gulp.dest('./dist'));
 })
 
@@ -82,18 +85,6 @@ gulp.task('default', function(cb) {
     cb);
 });
 
-gulp.task('serve', ['default'], function () {
-  browserSync({
-    notify: false,
-    server: {
-      baseDir: ['.tmp', 'static'],
-      routes: {
-        // '/components/fonts': 'fonts'
-      }
-    }
-  });
-
-  gulp.watch(['static/**/*.{js,html}'], ['jshint', reload]);
-  gulp.watch(['static/**/*.{scss,css}'], ['styles', reload]);
-  gulp.watch(['static/**/*.{svg,png,jpg}'], ['images', reload]);
+gulp.task('watch', ['default'], function () {
+  gulp.watch(['static/**/*'], ['default', reload]);
 });

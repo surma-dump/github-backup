@@ -69,6 +69,7 @@ func main() {
 	http.HandleFunc("/import", githubImport)
 	http.HandleFunc("/callback", githubCallback)
 	http.Handle("/", http.FileServer(http.Dir(*static)))
+
 	log.Printf("Starting webserver on %s...", *listen)
 	if err := http.ListenAndServe(*listen, nil); err != nil {
 		log.Fatalf("Error starting webserver: %s", err)
