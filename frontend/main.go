@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 
 	"github.com/garyburd/redigo/redis"
 	gh "github.com/google/go-github/github"
@@ -68,7 +70,16 @@ func main() {
 	http.HandleFunc("/repos", listRepos)
 	http.HandleFunc("/import", githubImport)
 	http.HandleFunc("/callback", githubCallback)
-	http.Handle("/", http.FileServer(http.Dir(*static)))
+
+	staticUrl, err := url.Parse(*static)
+	if err != nil {
+		log.Fatalf("Error parsing static parameter: %s", err)
+	}
+	if staticUrl.Scheme == "http" || staticUrl.Scheme == "https" {
+		http.Handle("/", httputil.NewSingleHostReverseProxy(staticUrl))
+	} else {
+		http.Handle("/", http.FileServer(http.Dir(staticUrl.Path)))
+	}
 
 	log.Printf("Starting webserver on %s...", *listen)
 	if err := http.ListenAndServe(*listen, nil); err != nil {

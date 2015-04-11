@@ -85,6 +85,18 @@ gulp.task('default', function(cb) {
     cb);
 });
 
-gulp.task('watch', ['default'], function () {
-  gulp.watch(['static/**/*'], ['default', reload]);
+gulp.task('serve', ['default'], function () {
+  browserSync({
+    notify: false,
+    server: {
+      baseDir: ['.tmp', 'static'],
+      routes: {
+        // '/components/fonts': 'fonts'
+      }
+    }
+  });
+
+  gulp.watch(['static/**/*.{js,html}'], ['jshint', reload]);
+  gulp.watch(['static/**/*.{scss,css}'], ['styles', reload]);
+  gulp.watch(['static/**/*.{svg,png,jpg}'], ['images', reload]);
 });
