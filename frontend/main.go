@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 
 	"github.com/garyburd/redigo/redis"
 	gh "github.com/google/go-github/github"
@@ -36,6 +37,8 @@ type key int
 const (
 	RedisKey key = iota
 	GithubApiKey
+	ImportUserRepoKey
+	ImportStarredRepoKey
 )
 
 func main() {
@@ -158,7 +161,7 @@ func listRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 func githubImport(w http.ResponseWriter, r *http.Request) {
-	target := oauthConfig.AuthCodeURL("random", oauth2.ApprovalForce)
+	target := oauthConfig.AuthCodeURL(r.URL.RawQuery, oauth2.ApprovalForce)
 	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
 
@@ -172,9 +175,20 @@ func (goi GithubOptIn) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func githubCallback(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("state") != "random" {
+	ctx := root
+
+	state, err := url.ParseQuery(r.FormValue("state"))
+	if err != nil {
 		http.Error(w, "Invalid state", http.StatusBadRequest)
 		return
+	}
+	ctx = context.WithValue(ctx, ImportUserRepoKey, false)
+	if state.Get("user") == "true" {
+		ctx = context.WithValue(ctx, ImportUserRepoKey, true)
+	}
+	ctx = context.WithValue(ctx, ImportStarredRepoKey, false)
+	if state.Get("starred") == "true" {
+		ctx = context.WithValue(ctx, ImportStarredRepoKey, true)
 	}
 
 	token, err := oauthConfig.Exchange(oauth2.NoContext, r.FormValue("code"))
@@ -188,8 +202,7 @@ func githubCallback(w http.ResponseWriter, r *http.Request) {
 	c := &http.Client{Transport: GithubOptIn{t}}
 	ghApi := gh.NewClient(c)
 
-	ctx := root
-	ctx = context.WithValue(root, GithubApiKey, ghApi)
+	ctx = context.WithValue(ctx, GithubApiKey, ghApi)
 	go importRepos(ctx)
 	fmt.Fprintf(w, "<script>window.close();</script>")
 }
@@ -198,9 +211,39 @@ func importRepos(ctx context.Context) {
 	ghApi := ctx.Value(GithubApiKey).(*gh.Client)
 	conn := ctx.Value(RedisKey).(redis.Conn)
 
+	ch := make(chan gh.Repository)
+	wg := &sync.WaitGroup{}
+	if ctx.Value(ImportUserRepoKey).(bool) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			paginatedRepos(ch, ghApi, "/user/repos")
+		}()
+	}
+	if ctx.Value(ImportStarredRepoKey).(bool) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			paginatedRepos(ch, ghApi, "/user/starred")
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	for repo := range ch {
+		if _, err := conn.Do("SADD", *namespace+":known_repos", *repo.SSHURL); err != nil {
+			log.Printf("Error saving to database: %s", err)
+		}
+	}
+}
+
+func paginatedRepos(ch chan gh.Repository, ghApi *gh.Client, url string) {
 	currentPage := 1
 	for currentPage != 0 {
-		req, err := ghApi.NewRequest("GET", fmt.Sprintf("user/repos?page=%d", currentPage), nil)
+		req, err := ghApi.NewRequest("GET", fmt.Sprintf(url+"?page=%d", currentPage), nil)
 		if err != nil {
 			log.Printf("Error creating request: %s", err)
 			return
@@ -212,9 +255,7 @@ func importRepos(ctx context.Context) {
 			return
 		}
 		for _, repo := range repos {
-			if _, err := conn.Do("SADD", *namespace+":known_repos", *repo.SSHURL); err != nil {
-				log.Printf("Error saving to database: %s", err)
-			}
+			ch <- repo
 		}
 		currentPage = resp.NextPage
 	}
