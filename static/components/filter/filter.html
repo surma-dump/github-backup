@@ -1,0 +1,45 @@
+<!doctype html>
+<dom-module id="x-filter">
+  <style>
+    .content-wrapper > ::content .invisible {
+      display: none !important;
+    }
+  </style>
+  <template>
+    <div class="content-wrapper">
+      <content id="contents"></content>
+    </div>
+  </template>
+</dom-module>
+
+<script>
+  Polymer({
+    is: "x-filter",
+
+    selectorChanged: function() {
+      this.update();
+    },
+
+    update: function() {
+      var el = Polymer.dom(this.$.contents).getDistributedNodes();
+      var selector = new RegExp(this.selector);
+      [].forEach.call(el, function(e) {
+        if(e.nodeType != 1) {
+          return;
+        }
+        e.classList.add('invisible');
+        if(selector.test(e.getAttribute('data-value'))) {
+          e.classList.remove('invisible');
+        }
+      });
+    },
+
+    properties: {
+      selector: {
+        value: "",
+        observer: 'selectorChanged',
+        reflectToAttribute: true
+      }
+    }
+  });
+</script>

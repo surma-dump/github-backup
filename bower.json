@@ -1,0 +1,9 @@
+{
+  "name": "github-backup",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "polymer": "~0.8.0",
+    "q-xhr": "~0.1.2"
+  }
+}
