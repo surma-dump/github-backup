@@ -1,6 +1,6 @@
 {
   "name": "github-backup",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "dependencies": {
     "bower": "^1.4.1",
     "del": "^1.1.1",
