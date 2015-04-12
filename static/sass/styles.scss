@@ -1,7 +1,33 @@
 body {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+}
+
+main {
+  width: 800px;
+}
+
+#query {
+  width: 100%;
+}
+
+#import {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  label {
+    display: block;
+    input {
+      display: inline;
+    }
+  }
+}
+
+.spacer {
+  flex-grow: 99;
 }
 
 #filter label {

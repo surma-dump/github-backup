@@ -17,15 +17,29 @@
     <link rel="import" href="components/filter/filter.html">
   </head>
   <body>
-    <main>
-      <div id="filter">
-        <input type="text">
-        <x-filter>
-        </x-filter>
-      </div>
+    <main id="filter">
+      <input type="text" id="query">
+      <x-filter>
+      </x-filter>
+      <div id="import">
+        <label>
+          <input type="checkbox" checked id="repos">
+          Repositories with access
+        </label>
+        <label>
+          <input type="checkbox" id="starred">
+          Starred repositories
+        </label>
+        <div class="spacer"></div>
+        <button>Import from GitHub</button>
+       </div>
     </main>
+    <!-- build:remove -->
+    <div>DEVELOPMENT BUILD</div>
+    <!-- endbuild -->
     <!-- build:js js/postbody.js -->
-    <script src="js/main.js"></script>
+    <script src="js/filter.js"></script>
+    <script src="js/load_repos.js"></script>
     <!-- endbuild -->
   </body>
 </html>
