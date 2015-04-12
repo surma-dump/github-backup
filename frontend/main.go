@@ -24,6 +24,7 @@ var (
 	publicUrl    = flag.String("public", "", "Public URL of the app")
 	redisUrl     = flag.String("redis", "", "Address of redis")
 	static       = flag.String("static", "static", "Path to static files")
+	namespace    = flag.String("namespace", "github-backup", "Database namespace")
 	help         = flag.Bool("help", false, "Show this help")
 
 	oauthConfig *oauth2.Config
@@ -90,7 +91,7 @@ func main() {
 func active(w http.ResponseWriter, r *http.Request) {
 	conn := root.Value(RedisKey).(redis.Conn)
 
-	vals, err := redis.Values(conn.Do("SMEMBERS", "github-backup:repos"))
+	vals, err := redis.Values(conn.Do("SMEMBERS", *namespace+":repos"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -114,7 +115,7 @@ func activate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name query parameter missing", http.StatusInternalServerError)
 		return
 	}
-	if _, err := conn.Do("SADD", "github-backup:repos", name); err != nil {
+	if _, err := conn.Do("SADD", *namespace+":repos", name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -130,7 +131,7 @@ func deactivate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name query parameter missing", http.StatusInternalServerError)
 		return
 	}
-	if _, err := conn.Do("SREM", "github-backup:repos", name); err != nil {
+	if _, err := conn.Do("SREM", *namespace+":repos", name); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -141,7 +142,7 @@ func deactivate(w http.ResponseWriter, r *http.Request) {
 func listRepos(w http.ResponseWriter, r *http.Request) {
 	conn := root.Value(RedisKey).(redis.Conn)
 
-	vals, err := redis.Values(conn.Do("SMEMBERS", "github-backup:known_repos"))
+	vals, err := redis.Values(conn.Do("SMEMBERS", *namespace+":known_repos"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -211,7 +212,7 @@ func importRepos(ctx context.Context) {
 			return
 		}
 		for _, repo := range repos {
-			if _, err := conn.Do("SADD", "github-backup:known_repos", *repo.SSHURL); err != nil {
+			if _, err := conn.Do("SADD", *namespace+":known_repos", *repo.SSHURL); err != nil {
 				log.Printf("Error saving to database: %s", err)
 			}
 		}

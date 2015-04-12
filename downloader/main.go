@@ -27,6 +27,7 @@ var (
 	ftpUrl    = flag.String("ftp", "", "FTP server to save backups to")
 	redisUrl  = flag.String("redis", "", "Address of redis")
 	frequency = flag.Duration("frequency", 24*time.Hour, "Frequency of backups")
+	namespace = flag.String("namespace", "github-backup", "Database namespace")
 	force     = flag.Bool("force", false, "Force download")
 	help      = flag.Bool("help", false, "Show this help")
 )
@@ -97,7 +98,7 @@ func main() {
 }
 
 func lastRun(conn redis.Conn) time.Time {
-	ok, err := redis.Bool(conn.Do("EXISTS", "github-backup:lastrun"))
+	ok, err := redis.Bool(conn.Do("EXISTS", *namespace+":lastrun"))
 	if err != nil {
 		log.Fatalf("Error querying database: %s", err)
 	}
@@ -105,7 +106,7 @@ func lastRun(conn redis.Conn) time.Time {
 		return time.Unix(0, 0)
 	}
 
-	ts, err := redis.String(conn.Do("GET", "github-backup:lastrun"))
+	ts, err := redis.String(conn.Do("GET", *namespace+":lastrun"))
 	if err != nil {
 		log.Fatalf("Error retrieving timestamp: %s", err)
 	}
@@ -117,14 +118,14 @@ func lastRun(conn redis.Conn) time.Time {
 }
 
 func timestampLastRun(conn redis.Conn) {
-	_, err := conn.Do("SET", "github-backup:lastrun", time.Now().Format(time.RFC3339))
+	_, err := conn.Do("SET", *namespace+":lastrun", time.Now().Format(time.RFC3339))
 	if err != nil {
 		log.Fatalf("Error writing timestamp: %s", err)
 	}
 }
 
 func repos(conn redis.Conn) []string {
-	repos, err := redis.Values(conn.Do("SMEMBERS", "github-backup:repos"))
+	repos, err := redis.Values(conn.Do("SMEMBERS", *namespace+":repos"))
 	if err == redis.ErrNil {
 		return []string{}
 	}
@@ -163,7 +164,7 @@ func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
 }
 
 func downloadRepository(path string) (*bytes.Buffer, error) {
-	repo := os.TempDir() + "github-backup"
+	repo := os.TempDir() + *namespace
 
 	if err := os.MkdirAll(repo, os.FileMode(0700)); err != nil {
 		return nil, err
