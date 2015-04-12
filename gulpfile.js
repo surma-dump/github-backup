@@ -4,17 +4,18 @@ var gulp = require('gulp');
 var $ = require('gulp-load-plugins')();
 var del = require('del');
 var runSequence = require('run-sequence');
-var browserSync = require('browser-sync');
-var reload = browserSync.reload;
 var path = require('path');
 var pkg = require('./package.json');
+var browserSync;
+try {
+   browserSync = require('browser-sync');
+} catch(e) {};
 
 gulp.task('jshint', function () {
   return gulp.src([
     'static/js/*.js',
     'static/components/**/*.js'
   ])
-    .pipe(reload({stream: true, once: true}))
     .pipe($.jshint())
     .pipe($.jshint.reporter('jshint-stylish'))
     .pipe($.if(!browserSync.active, $.jshint.reporter('fail')));
@@ -99,7 +100,7 @@ gulp.task('serve', ['default'], function () {
     }
   });
 
-  gulp.watch(['static/js/*.js', 'static/components/**/*.js', 'static/*.html'], ['jshint', reload]);
-  gulp.watch(['static/**/*.{scss,css}'], ['styles', reload]);
-  gulp.watch(['static/**/*.{svg,png,jpg}'], ['images', reload]);
+  gulp.watch(['static/js/*.js', 'static/components/**/*.js', 'static/*.html'], ['jshint', browserSync.reload]);
+  gulp.watch(['static/**/*.{scss,css}'], ['styles', browserSync.reload]);
+  gulp.watch(['static/**/*.{svg,png,jpg}'], ['images', browserSync.reload]);
 });

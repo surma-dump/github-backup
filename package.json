@@ -1,8 +1,8 @@
 {
   "name": "github-backup",
   "version": "0.0.0",
-  "devDependencies": {
-    "browser-sync": "^2.5.3",
+  "dependencies": {
+    "bower": "^1.4.1",
     "del": "^1.1.1",
     "gulp": "^3.8.11",
     "gulp-cache": "^0.2.8",
@@ -20,5 +20,11 @@
     "gulp-vulcanize": "^5.0.0",
     "jshint-stylish": "^1.0.1",
     "run-sequence": "^1.0.2"
+  },
+  "devDependencies": {
+    "browser-sync": "^2.5.3"
+  },
+  "scripts": {
+    "postinstall": "bower install && gulp"
   }
 }
