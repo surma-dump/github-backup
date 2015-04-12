@@ -10,7 +10,10 @@ var path = require('path');
 var pkg = require('./package.json');
 
 gulp.task('jshint', function () {
-  return gulp.src('static/**/*.js')
+  return gulp.src([
+    'static/js/*.js',
+    'static/components/**/*.js'
+  ])
     .pipe(reload({stream: true, once: true}))
     .pipe($.jshint())
     .pipe($.jshint.reporter('jshint-stylish'))
@@ -96,7 +99,7 @@ gulp.task('serve', ['default'], function () {
     }
   });
 
-  gulp.watch(['static/**/*.{js,html}'], ['jshint', reload]);
+  gulp.watch(['static/js/*.js', 'static/components/**/*.js', 'static/*.html'], ['jshint', reload]);
   gulp.watch(['static/**/*.{scss,css}'], ['styles', reload]);
   gulp.watch(['static/**/*.{svg,png,jpg}'], ['images', reload]);
 });
