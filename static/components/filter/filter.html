@@ -1,0 +1,41 @@
+<!doctype html>
+<dom-module id="x-filter">
+  <style>
+    .content-wrapper > ::content .invisible {
+      display: none;
+    }
+  </style>
+  <template>
+    <div id="children" class="content-wrapper">
+      <content></content>
+    </div>
+  </template>
+</dom-module>
+
+<script>
+  Polymer({
+    is: "x-filter",
+
+    selectorChanged: function() {
+      this.update();
+    },
+
+    update: function() {
+      Array.prototype.forEach.call(this.$.children.children, function(e) {
+        e.classList.add('invisible');
+      });
+      var visibleChildren = this.$.children.querySelectorAll('[data-value*="' + this.selector + '"]');
+      Array.prototype.forEach.call(visibleChildren, function(e) {
+        e.classList.remove('invisible');
+      });
+    },
+
+    properties: {
+      selector: {
+        value: "",
+        observer: 'selectorChanged',
+        reflectToAttribute: true
+      }
+    }
+  });
+</script>
