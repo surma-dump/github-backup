@@ -2,12 +2,12 @@
 <dom-module id="x-filter">
   <style>
     .content-wrapper > ::content .invisible {
-      display: none;
+      display: none !important;
     }
   </style>
   <template>
-    <div id="children" class="content-wrapper">
-      <content></content>
+    <div class="content-wrapper">
+      <content id="contents"></content>
     </div>
   </template>
 </dom-module>
@@ -21,12 +21,16 @@
     },
 
     update: function() {
-      Array.prototype.forEach.call(this.$.children.children, function(e) {
+      var el = Polymer.dom(this.$.contents).getDistributedNodes();
+      var selector = new RegExp(this.selector);
+      [].forEach.call(el, function(e) {
+        if(e.nodeType != 1) {
+          return;
+        }
         e.classList.add('invisible');
-      });
-      var visibleChildren = this.$.children.querySelectorAll('[data-value*="' + this.selector + '"]');
-      Array.prototype.forEach.call(visibleChildren, function(e) {
-        e.classList.remove('invisible');
+        if(selector.test(e.getAttribute('data-value'))) {
+          e.classList.remove('invisible');
+        }
       });
     },
 

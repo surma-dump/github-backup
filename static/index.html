@@ -8,6 +8,8 @@
     <!-- endbuild -->
 
     <!-- build:js js/prebody.js -->
+    <script src="bower_components/q/q.js"></script>
+    <script src="bower_components/q-xhr/q-xhr.js"></script>
     <script src="bower_components/webcomponentsjs/webcomponents-lite.js"></script>
     <!-- endbuild -->
 
@@ -16,13 +18,11 @@
   </head>
   <body>
     <main>
-      <h1>DEV VERSION</h1>
-      <x-filter>
-        <div data-value="Peter">Peter</div>
-        <div data-value="August">August</div>
-        <div data-value="Siegmund">Siegmund</div>
-        <div data-value="Roy">Roy</div>
-      </x-filter>
+      <div id="filter">
+        <input type="text">
+        <x-filter>
+        </x-filter>
+      </div>
     </main>
     <!-- build:js js/postbody.js -->
     <script src="js/main.js"></script>
