@@ -30,6 +30,6 @@ func ConnectRedis(s string) (redis.Conn, error) {
 			return conn, err
 		}
 	}
-	_, err = conn.Do("EXISTS", "github-backup:lastrun")
+	_, err = conn.Do("EXISTS", "somekey")
 	return conn, err
 }

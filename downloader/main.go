@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"encoding/base64"
 	"flag"
@@ -24,9 +23,10 @@ import (
 
 var (
 	sshKey    = flag.String("key", "", "SSH key to use for cloning")
-	ftpUrl    = flag.String("ftp", "", "FTP server to save backups to")
-	redisUrl  = flag.String("redis", "", "Address of redis")
+	ftpURL    = flag.String("ftp", "", "FTP server to save backups to")
+	redisURL  = flag.String("redis", "", "Address of redis")
 	frequency = flag.Duration("frequency", 24*time.Hour, "Frequency of backups")
+	namespace = flag.String("namespace", "github-backup", "Database namespace")
 	force     = flag.Bool("force", false, "Force download")
 	help      = flag.Bool("help", false, "Show this help")
 )
@@ -41,28 +41,28 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-	if *ftpUrl == "" || *redisUrl == "" {
+	if *ftpURL == "" || *redisURL == "" {
 		log.Fatalf("-ftp and -redis have to be set")
 	}
 
 	if *sshKey != "" {
-		if err := addSshKey(*sshKey); err != nil {
+		if err := addSSHKey(*sshKey); err != nil {
 			log.Fatalf("Could not add SSH key: %s", err)
 		}
 	}
 
-	redisConn, err := common.ConnectRedis(*redisUrl)
+	redisConn, err := common.ConnectRedis(*redisURL)
 	if err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
 	defer redisConn.Close()
 
-	ftpConn, ftpUrl, err := connectFtp(*ftpUrl)
+	ftpConn, ftpURL, err := connectFtp(*ftpURL)
 	if err != nil {
 		log.Fatalf("Could not connect to FTP server: %s", err)
 	}
 	defer ftpConn.Close()
-	if err := ftpConn.Cwd(ftpUrl.Path); err != nil {
+	if err := ftpConn.Cwd(ftpURL.Path); err != nil {
 		log.Fatalf("Could not cd to target directory: %s", err)
 	}
 
@@ -81,13 +81,13 @@ func main() {
 		for _, repo := range repos {
 			log.Printf("Downloading %s...", repo)
 			safeName := badCharacters.ReplaceAllString(repo, "_")
-			buf, err := downloadRepository(repo)
+			r, err := downloadRepository(repo)
 			if err != nil {
 				log.Printf("Error downloading repository: %s", err)
 				continue
 			}
 
-			if err := ftpConn.Stor(safeName+".tar.gz", buf); err != nil {
+			if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
 				log.Printf("Error uploading: %s", err)
 			}
 		}
@@ -97,7 +97,7 @@ func main() {
 }
 
 func lastRun(conn redis.Conn) time.Time {
-	ok, err := redis.Bool(conn.Do("EXISTS", "github-backup:lastrun"))
+	ok, err := redis.Bool(conn.Do("EXISTS", *namespace+":lastrun"))
 	if err != nil {
 		log.Fatalf("Error querying database: %s", err)
 	}
@@ -105,7 +105,7 @@ func lastRun(conn redis.Conn) time.Time {
 		return time.Unix(0, 0)
 	}
 
-	ts, err := redis.String(conn.Do("GET", "github-backup:lastrun"))
+	ts, err := redis.String(conn.Do("GET", *namespace+":lastrun"))
 	if err != nil {
 		log.Fatalf("Error retrieving timestamp: %s", err)
 	}
@@ -117,14 +117,14 @@ func lastRun(conn redis.Conn) time.Time {
 }
 
 func timestampLastRun(conn redis.Conn) {
-	_, err := conn.Do("SET", "github-backup:lastrun", time.Now().Format(time.RFC3339))
+	_, err := conn.Do("SET", *namespace+":lastrun", time.Now().Format(time.RFC3339))
 	if err != nil {
 		log.Fatalf("Error writing timestamp: %s", err)
 	}
 }
 
 func repos(conn redis.Conn) []string {
-	repos, err := redis.Values(conn.Do("SMEMBERS", "github-backup:repos"))
+	repos, err := redis.Values(conn.Do("SMEMBERS", *namespace+":repos"))
 	if err == redis.ErrNil {
 		return []string{}
 	}
@@ -139,36 +139,35 @@ func repos(conn redis.Conn) []string {
 }
 
 func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
-	ftpUrl, err := url.Parse(s)
+	ftpURL, err := url.Parse(s)
 	if err != nil {
 		log.Fatalf("Invalid ftp url: %s", err)
 	}
-	if ftpUrl.Scheme != "ftp" {
-		log.Fatalf("Unsupported target scheme %s", ftpUrl.Scheme)
+	if ftpURL.Scheme != "ftp" {
+		log.Fatalf("Unsupported target scheme %s", ftpURL.Scheme)
 	}
-	if !strings.Contains(ftpUrl.Host, ":") {
-		ftpUrl.Host += ":21"
+	if !strings.Contains(ftpURL.Host, ":") {
+		ftpURL.Host += ":21"
 	}
 
-	ftp, err := goftp.Connect(ftpUrl.Host)
+	ftp, err := goftp.Connect(ftpURL.Host)
 	if err != nil {
-		return ftp, ftpUrl, err
+		return ftp, ftpURL, err
 	}
-	if ftpUrl.User == nil {
-		return ftp, ftpUrl, err
+	if ftpURL.User == nil {
+		return ftp, ftpURL, err
 	}
-	user := ftpUrl.User.Username()
-	pass, _ := ftpUrl.User.Password()
-	return ftp, ftpUrl, ftp.Login(user, pass)
+	user := ftpURL.User.Username()
+	pass, _ := ftpURL.User.Password()
+	return ftp, ftpURL, ftp.Login(user, pass)
 }
 
-func downloadRepository(path string) (*bytes.Buffer, error) {
-	repo := os.TempDir() + "github-backup"
+func downloadRepository(path string) (io.Reader, error) {
+	repo := os.TempDir() + *namespace
 
 	if err := os.MkdirAll(repo, os.FileMode(0700)); err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(repo)
 
 	cmd := exec.Command("git", "clone", "--bare", path)
 	cmd.Dir = repo
@@ -181,54 +180,58 @@ func downloadRepository(path string) (*bytes.Buffer, error) {
 	return tarDir(repo)
 }
 
-func tarDir(root string) (*bytes.Buffer, error) {
-	buf := &bytes.Buffer{}
-	gzbuf := gzip.NewWriter(buf)
-	defer gzbuf.Close()
-	defer gzbuf.Flush()
-	archive := tar.NewWriter(gzbuf)
-	defer archive.Close()
-	defer archive.Flush()
-	err := filepath.Walk(root, filepath.WalkFunc(func(path string, info os.FileInfo, err error) error {
-		if path == root {
+func tarDir(root string) (io.Reader, error) {
+	r, w := io.Pipe()
+	go func() {
+		defer os.RemoveAll(root)
+		defer w.Close()
+		gzbuf := gzip.NewWriter(w)
+		defer gzbuf.Close()
+		defer gzbuf.Flush()
+		archive := tar.NewWriter(gzbuf)
+		defer archive.Close()
+		defer archive.Flush()
+		err := filepath.Walk(root, filepath.WalkFunc(func(path string, info os.FileInfo, err error) error {
+			if path == root {
+				return nil
+			}
+			relPath := strings.TrimPrefix(path, root)
+			hdr := &tar.Header{
+				Name:     strings.TrimPrefix(relPath, "/"),
+				Mode:     int64(info.Mode() & os.ModePerm),
+				Uid:      1000,
+				Gid:      1000,
+				Size:     info.Size(),
+				Typeflag: tar.TypeReg,
+			}
+			if info.IsDir() {
+				hdr.Typeflag = tar.TypeDir
+				hdr.Size = 0
+			}
+
+			if err := archive.WriteHeader(hdr); err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if _, err := io.Copy(archive, f); err != nil && err != io.EOF {
+				return err
+			}
 			return nil
-		}
-		relPath := strings.TrimPrefix(path, root)
-		hdr := &tar.Header{
-			Name:     strings.TrimPrefix(relPath, "/"),
-			Mode:     int64(info.Mode() & os.ModePerm),
-			Uid:      1000,
-			Gid:      1000,
-			Size:     info.Size(),
-			Typeflag: tar.TypeReg,
-		}
-		if info.IsDir() {
-			hdr.Typeflag = tar.TypeDir
-			hdr.Size = 0
-		}
-
-		if err := archive.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		f, err := os.Open(path)
+		}))
 		if err != nil {
-			return err
+			log.Printf("Error creating archive: %s", err)
 		}
-		defer f.Close()
-		if _, err := io.Copy(archive, f); err != nil && err != io.EOF {
-			return err
-		}
-		return nil
-	}))
-	if err != nil {
-		return nil, err
-	}
-	return buf, nil
+	}()
+	return r, nil
 }
 
 const (
@@ -250,7 +253,7 @@ func writeFile(path string, content []byte) error {
 	return nil
 }
 
-func addSshKey(encKey string) error {
+func addSSHKey(encKey string) error {
 	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
 		return fmt.Errorf("Error decoding key: %s", err)
