@@ -20,10 +20,10 @@ import (
 
 var (
 	listen       = flag.String("listen", "localhost:8080", "Address to bind webserver to")
-	clientId     = flag.String("id", "", "App ID of GitHub app")
+	clientID     = flag.String("id", "", "App ID of GitHub app")
 	clientSecret = flag.String("secret", "", "Secret of GitHub app")
-	publicUrl    = flag.String("public", "", "Public URL of the app")
-	redisUrl     = flag.String("redis", "", "Address of redis")
+	publicURL    = flag.String("public", "", "Public URL of the app")
+	redisURL     = flag.String("redis", "", "Address of redis")
 	static       = flag.String("static", "static", "Path to static files")
 	namespace    = flag.String("namespace", "github-backup", "Database namespace")
 	help         = flag.Bool("help", false, "Show this help")
@@ -35,10 +35,10 @@ var (
 type key int
 
 const (
-	RedisKey key = iota
-	GithubApiKey
-	ImportUserRepoKey
-	ImportStarredRepoKey
+	redisKey key = iota
+	githubAPIKey
+	importUserRepoKey
+	importStarredRepoKey
 )
 
 func main() {
@@ -48,25 +48,25 @@ func main() {
 		return
 	}
 
-	if *redisUrl == "" {
+	if *redisURL == "" {
 		log.Fatalf("-redis has to be set")
 	}
 
 	oauthConfig = &oauth2.Config{
-		ClientID:     *clientId,
+		ClientID:     *clientID,
 		ClientSecret: *clientSecret,
-		RedirectURL:  *publicUrl + "/callback",
+		RedirectURL:  *publicURL + "/callback",
 		Scopes:       []string{"repo"},
 		Endpoint:     github.Endpoint,
 	}
 
-	redisConn, err := common.ConnectRedis(*redisUrl)
+	redisConn, err := common.ConnectRedis(*redisURL)
 	if err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
 	defer redisConn.Close()
 
-	root = context.WithValue(root, RedisKey, redisConn)
+	root = context.WithValue(root, redisKey, redisConn)
 
 	http.HandleFunc("/active", active)
 	http.HandleFunc("/activate", activate)
@@ -75,14 +75,14 @@ func main() {
 	http.HandleFunc("/import", githubImport)
 	http.HandleFunc("/callback", githubCallback)
 
-	staticUrl, err := url.Parse(*static)
+	staticURL, err := url.Parse(*static)
 	if err != nil {
 		log.Fatalf("Error parsing static parameter: %s", err)
 	}
-	if staticUrl.Scheme == "http" || staticUrl.Scheme == "https" {
-		http.Handle("/", httputil.NewSingleHostReverseProxy(staticUrl))
+	if staticURL.Scheme == "http" || staticURL.Scheme == "https" {
+		http.Handle("/", httputil.NewSingleHostReverseProxy(staticURL))
 	} else {
-		http.Handle("/", http.FileServer(http.Dir(staticUrl.Path)))
+		http.Handle("/", http.FileServer(http.Dir(staticURL.Path)))
 	}
 
 	log.Printf("Starting webserver on %s...", *listen)
@@ -92,7 +92,7 @@ func main() {
 }
 
 func active(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(RedisKey).(redis.Conn)
+	conn := root.Value(redisKey).(redis.Conn)
 
 	vals, err := redis.Values(conn.Do("SMEMBERS", *namespace+":repos"))
 	if err != nil {
@@ -111,7 +111,7 @@ func active(w http.ResponseWriter, r *http.Request) {
 }
 
 func activate(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(RedisKey).(redis.Conn)
+	conn := root.Value(redisKey).(redis.Conn)
 	name := r.FormValue("name")
 
 	if name == "" {
@@ -127,7 +127,7 @@ func activate(w http.ResponseWriter, r *http.Request) {
 }
 
 func deactivate(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(RedisKey).(redis.Conn)
+	conn := root.Value(redisKey).(redis.Conn)
 	name := r.FormValue("name")
 
 	if name == "" {
@@ -143,7 +143,7 @@ func deactivate(w http.ResponseWriter, r *http.Request) {
 }
 
 func listRepos(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(RedisKey).(redis.Conn)
+	conn := root.Value(redisKey).(redis.Conn)
 
 	vals, err := redis.Values(conn.Do("SMEMBERS", *namespace+":known_repos"))
 	if err != nil {
@@ -165,11 +165,11 @@ func githubImport(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
 
-type GithubOptIn struct {
+type githubOptIn struct {
 	http.RoundTripper
 }
 
-func (goi GithubOptIn) RoundTrip(r *http.Request) (*http.Response, error) {
+func (goi githubOptIn) RoundTrip(r *http.Request) (*http.Response, error) {
 	r.Header.Set("Accept", "application/vnd.github.moondragon+json")
 	return goi.RoundTripper.RoundTrip(r)
 }
@@ -182,13 +182,13 @@ func githubCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid state", http.StatusBadRequest)
 		return
 	}
-	ctx = context.WithValue(ctx, ImportUserRepoKey, false)
+	ctx = context.WithValue(ctx, importUserRepoKey, false)
 	if state.Get("user") == "true" {
-		ctx = context.WithValue(ctx, ImportUserRepoKey, true)
+		ctx = context.WithValue(ctx, importUserRepoKey, true)
 	}
-	ctx = context.WithValue(ctx, ImportStarredRepoKey, false)
+	ctx = context.WithValue(ctx, importStarredRepoKey, false)
 	if state.Get("starred") == "true" {
-		ctx = context.WithValue(ctx, ImportStarredRepoKey, true)
+		ctx = context.WithValue(ctx, importStarredRepoKey, true)
 	}
 
 	token, err := oauthConfig.Exchange(oauth2.NoContext, r.FormValue("code"))
@@ -199,32 +199,32 @@ func githubCallback(w http.ResponseWriter, r *http.Request) {
 
 	tokenSource := oauthConfig.TokenSource(oauth2.NoContext, token)
 	t := &oauth2.Transport{Source: tokenSource}
-	c := &http.Client{Transport: GithubOptIn{t}}
-	ghApi := gh.NewClient(c)
+	c := &http.Client{Transport: githubOptIn{t}}
+	ghAPI := gh.NewClient(c)
 
-	ctx = context.WithValue(ctx, GithubApiKey, ghApi)
+	ctx = context.WithValue(ctx, githubAPIKey, ghAPI)
 	go importRepos(ctx)
 	fmt.Fprintf(w, "<script>window.close();</script>")
 }
 
 func importRepos(ctx context.Context) {
-	ghApi := ctx.Value(GithubApiKey).(*gh.Client)
-	conn := ctx.Value(RedisKey).(redis.Conn)
+	ghAPI := ctx.Value(githubAPIKey).(*gh.Client)
+	conn := ctx.Value(redisKey).(redis.Conn)
 
 	ch := make(chan gh.Repository)
 	wg := &sync.WaitGroup{}
-	if ctx.Value(ImportUserRepoKey).(bool) {
+	if ctx.Value(importUserRepoKey).(bool) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			paginatedRepos(ch, ghApi, "/user/repos")
+			paginatedRepos(ch, ghAPI, "/user/repos")
 		}()
 	}
-	if ctx.Value(ImportStarredRepoKey).(bool) {
+	if ctx.Value(importStarredRepoKey).(bool) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			paginatedRepos(ch, ghApi, "/user/starred")
+			paginatedRepos(ch, ghAPI, "/user/starred")
 		}()
 	}
 
@@ -240,16 +240,16 @@ func importRepos(ctx context.Context) {
 	}
 }
 
-func paginatedRepos(ch chan gh.Repository, ghApi *gh.Client, url string) {
+func paginatedRepos(ch chan gh.Repository, ghAPI *gh.Client, url string) {
 	currentPage := 1
 	for currentPage != 0 {
-		req, err := ghApi.NewRequest("GET", fmt.Sprintf(url+"?page=%d", currentPage), nil)
+		req, err := ghAPI.NewRequest("GET", fmt.Sprintf(url+"?page=%d", currentPage), nil)
 		if err != nil {
 			log.Printf("Error creating request: %s", err)
 			return
 		}
 		repos := []gh.Repository{}
-		resp, err := ghApi.Do(req, &repos)
+		resp, err := ghAPI.Do(req, &repos)
 		if err != nil {
 			log.Printf("Error executing request: %s", err)
 			return

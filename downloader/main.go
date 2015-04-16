@@ -23,8 +23,8 @@ import (
 
 var (
 	sshKey    = flag.String("key", "", "SSH key to use for cloning")
-	ftpUrl    = flag.String("ftp", "", "FTP server to save backups to")
-	redisUrl  = flag.String("redis", "", "Address of redis")
+	ftpURL    = flag.String("ftp", "", "FTP server to save backups to")
+	redisURL  = flag.String("redis", "", "Address of redis")
 	frequency = flag.Duration("frequency", 24*time.Hour, "Frequency of backups")
 	namespace = flag.String("namespace", "github-backup", "Database namespace")
 	force     = flag.Bool("force", false, "Force download")
@@ -41,28 +41,28 @@ func main() {
 		flag.PrintDefaults()
 		return
 	}
-	if *ftpUrl == "" || *redisUrl == "" {
+	if *ftpURL == "" || *redisURL == "" {
 		log.Fatalf("-ftp and -redis have to be set")
 	}
 
 	if *sshKey != "" {
-		if err := addSshKey(*sshKey); err != nil {
+		if err := addSSHKey(*sshKey); err != nil {
 			log.Fatalf("Could not add SSH key: %s", err)
 		}
 	}
 
-	redisConn, err := common.ConnectRedis(*redisUrl)
+	redisConn, err := common.ConnectRedis(*redisURL)
 	if err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
 	defer redisConn.Close()
 
-	ftpConn, ftpUrl, err := connectFtp(*ftpUrl)
+	ftpConn, ftpURL, err := connectFtp(*ftpURL)
 	if err != nil {
 		log.Fatalf("Could not connect to FTP server: %s", err)
 	}
 	defer ftpConn.Close()
-	if err := ftpConn.Cwd(ftpUrl.Path); err != nil {
+	if err := ftpConn.Cwd(ftpURL.Path); err != nil {
 		log.Fatalf("Could not cd to target directory: %s", err)
 	}
 
@@ -139,27 +139,27 @@ func repos(conn redis.Conn) []string {
 }
 
 func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
-	ftpUrl, err := url.Parse(s)
+	ftpURL, err := url.Parse(s)
 	if err != nil {
 		log.Fatalf("Invalid ftp url: %s", err)
 	}
-	if ftpUrl.Scheme != "ftp" {
-		log.Fatalf("Unsupported target scheme %s", ftpUrl.Scheme)
+	if ftpURL.Scheme != "ftp" {
+		log.Fatalf("Unsupported target scheme %s", ftpURL.Scheme)
 	}
-	if !strings.Contains(ftpUrl.Host, ":") {
-		ftpUrl.Host += ":21"
+	if !strings.Contains(ftpURL.Host, ":") {
+		ftpURL.Host += ":21"
 	}
 
-	ftp, err := goftp.Connect(ftpUrl.Host)
+	ftp, err := goftp.Connect(ftpURL.Host)
 	if err != nil {
-		return ftp, ftpUrl, err
+		return ftp, ftpURL, err
 	}
-	if ftpUrl.User == nil {
-		return ftp, ftpUrl, err
+	if ftpURL.User == nil {
+		return ftp, ftpURL, err
 	}
-	user := ftpUrl.User.Username()
-	pass, _ := ftpUrl.User.Password()
-	return ftp, ftpUrl, ftp.Login(user, pass)
+	user := ftpURL.User.Username()
+	pass, _ := ftpURL.User.Password()
+	return ftp, ftpURL, ftp.Login(user, pass)
 }
 
 func downloadRepository(path string) (io.Reader, error) {
@@ -253,7 +253,7 @@ func writeFile(path string, content []byte) error {
 	return nil
 }
 
-func addSshKey(encKey string) error {
+func addSSHKey(encKey string) error {
 	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
 		return fmt.Errorf("Error decoding key: %s", err)
