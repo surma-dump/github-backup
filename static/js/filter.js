@@ -15,6 +15,8 @@
     }
     Q.xhr.get('/' + action + '?name=' + item.getAttribute('data-value')).then(function() {
       input.disabled = false;
+    }).catch(function(err) {
+      console.error(err);
     });
   });
 })();

@@ -1,4 +1,6 @@
 (function(){
+  var filter = document.querySelector('x-filter');
+
   Q.xhr.get('/repos').then(function(resp) {
     resp.data.forEach(function(e) {
       var l = document.createElement('label');
