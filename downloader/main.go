@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"encoding/base64"
 	"flag"
@@ -82,13 +81,13 @@ func main() {
 		for _, repo := range repos {
 			log.Printf("Downloading %s...", repo)
 			safeName := badCharacters.ReplaceAllString(repo, "_")
-			buf, err := downloadRepository(repo)
+			r, err := downloadRepository(repo)
 			if err != nil {
 				log.Printf("Error downloading repository: %s", err)
 				continue
 			}
 
-			if err := ftpConn.Stor(safeName+".tar.gz", buf); err != nil {
+			if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
 				log.Printf("Error uploading: %s", err)
 			}
 		}
@@ -163,13 +162,12 @@ func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
 	return ftp, ftpUrl, ftp.Login(user, pass)
 }
 
-func downloadRepository(path string) (*bytes.Buffer, error) {
+func downloadRepository(path string) (io.Reader, error) {
 	repo := os.TempDir() + *namespace
 
 	if err := os.MkdirAll(repo, os.FileMode(0700)); err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(repo)
 
 	cmd := exec.Command("git", "clone", "--bare", path)
 	cmd.Dir = repo
@@ -182,54 +180,58 @@ func downloadRepository(path string) (*bytes.Buffer, error) {
 	return tarDir(repo)
 }
 
-func tarDir(root string) (*bytes.Buffer, error) {
-	buf := &bytes.Buffer{}
-	gzbuf := gzip.NewWriter(buf)
-	defer gzbuf.Close()
-	defer gzbuf.Flush()
-	archive := tar.NewWriter(gzbuf)
-	defer archive.Close()
-	defer archive.Flush()
-	err := filepath.Walk(root, filepath.WalkFunc(func(path string, info os.FileInfo, err error) error {
-		if path == root {
+func tarDir(root string) (io.Reader, error) {
+	r, w := io.Pipe()
+	go func() {
+		defer os.RemoveAll(root)
+		defer w.Close()
+		gzbuf := gzip.NewWriter(w)
+		defer gzbuf.Close()
+		defer gzbuf.Flush()
+		archive := tar.NewWriter(gzbuf)
+		defer archive.Close()
+		defer archive.Flush()
+		err := filepath.Walk(root, filepath.WalkFunc(func(path string, info os.FileInfo, err error) error {
+			if path == root {
+				return nil
+			}
+			relPath := strings.TrimPrefix(path, root)
+			hdr := &tar.Header{
+				Name:     strings.TrimPrefix(relPath, "/"),
+				Mode:     int64(info.Mode() & os.ModePerm),
+				Uid:      1000,
+				Gid:      1000,
+				Size:     info.Size(),
+				Typeflag: tar.TypeReg,
+			}
+			if info.IsDir() {
+				hdr.Typeflag = tar.TypeDir
+				hdr.Size = 0
+			}
+
+			if err := archive.WriteHeader(hdr); err != nil {
+				return err
+			}
+
+			if info.IsDir() {
+				return nil
+			}
+
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if _, err := io.Copy(archive, f); err != nil && err != io.EOF {
+				return err
+			}
 			return nil
-		}
-		relPath := strings.TrimPrefix(path, root)
-		hdr := &tar.Header{
-			Name:     strings.TrimPrefix(relPath, "/"),
-			Mode:     int64(info.Mode() & os.ModePerm),
-			Uid:      1000,
-			Gid:      1000,
-			Size:     info.Size(),
-			Typeflag: tar.TypeReg,
-		}
-		if info.IsDir() {
-			hdr.Typeflag = tar.TypeDir
-			hdr.Size = 0
-		}
-
-		if err := archive.WriteHeader(hdr); err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		f, err := os.Open(path)
+		}))
 		if err != nil {
-			return err
+			log.Printf("Error creating archive: %s", err)
 		}
-		defer f.Close()
-		if _, err := io.Copy(archive, f); err != nil && err != io.EOF {
-			return err
-		}
-		return nil
-	}))
-	if err != nil {
-		return nil, err
-	}
-	return buf, nil
+	}()
+	return r, nil
 }
 
 const (
