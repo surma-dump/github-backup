@@ -51,11 +51,11 @@ func main() {
 		}
 	}
 
-	redisConn, err := common.ConnectRedis(*redisURL)
-	if err != nil {
+	if err := common.CheckRedis(*redisURL); err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
-	defer redisConn.Close()
+	pool := common.CreateRedisPool(*redisURL)
+	defer pool.Close()
 
 	ftpConn, ftpURL, err := connectFtp(*ftpURL)
 	if err != nil {
@@ -67,32 +67,36 @@ func main() {
 	}
 
 	for {
-		if !*force {
-			nextRun := lastRun(redisConn).Add(*frequency)
-			if nextRun.After(time.Now()) {
-				time.Sleep(nextRun.Sub(time.Now()))
-				continue
+		func() {
+			redisConn := pool.Get()
+			defer redisConn.Close()
+			if !*force {
+				nextRun := lastRun(redisConn).Add(*frequency)
+				if nextRun.After(time.Now()) {
+					time.Sleep(nextRun.Sub(time.Now()))
+					return
+				}
 			}
-		}
-		*force = false
+			*force = false
 
-		log.Printf("Downloading all the repos...")
-		repos := repos(redisConn)
-		for _, repo := range repos {
-			log.Printf("Downloading %s...", repo)
-			safeName := badCharacters.ReplaceAllString(repo, "_")
-			r, err := downloadRepository(repo)
-			if err != nil {
-				log.Printf("Error downloading repository: %s", err)
-				continue
-			}
+			log.Printf("Downloading all the repos...")
+			repos := repos(redisConn)
+			for _, repo := range repos {
+				log.Printf("Downloading %s...", repo)
+				safeName := badCharacters.ReplaceAllString(repo, "_")
+				r, err := downloadRepository(repo)
+				if err != nil {
+					log.Printf("Error downloading repository: %s", err)
+					continue
+				}
 
-			if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
-				log.Printf("Error uploading: %s", err)
+				if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
+					log.Printf("Error uploading: %s", err)
+				}
 			}
-		}
-		log.Printf("Finished.")
-		timestampLastRun(redisConn)
+			log.Printf("Finished.")
+			timestampLastRun(redisConn)
+		}()
 	}
 }
 
