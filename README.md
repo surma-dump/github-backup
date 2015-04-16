@@ -5,4 +5,4 @@ TAR archives to a specified FTP server.
 Technically, repos hosted elsewhere than GitHub are supported.
 
 ---
-1.1.0
+1.1.1

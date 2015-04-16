@@ -3,33 +3,65 @@ package common
 import (
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/garyburd/redigo/redis"
 )
 
-func ConnectRedis(s string) (redis.Conn, error) {
-	redisUrl, err := url.Parse(s)
+// CheckRedis checks if the given URL is valid.
+// This includes checking for valid authentication.
+func CheckRedis(s string) error {
+	redisURL, err := url.Parse(s)
 	if err != nil {
-		return nil, fmt.Errorf("Could not parse redis url: %s", err)
+		return fmt.Errorf("Could not parse redis url: %s", err)
 	}
-	if redisUrl.Scheme != "redis" {
-		return nil, fmt.Errorf("Unsupported redis scheme %s", redisUrl.Scheme)
+	if redisURL.Scheme != "redis" {
+		return fmt.Errorf("Unsupported redis scheme %s", redisURL.Scheme)
 	}
 
-	conn, err := redis.Dial("tcp", redisUrl.Host)
+	conn, err := redis.Dial("tcp", redisURL.Host)
 	if err != nil {
-		return conn, err
+		return err
 	}
-	if redisUrl.User != nil {
-		pass, ok := redisUrl.User.Password()
+	if redisURL.User != nil {
+		pass, ok := redisURL.User.Password()
 		if !ok {
-			pass = redisUrl.User.Username()
+			pass = redisURL.User.Username()
 		}
 		_, err := conn.Do("AUTH", pass)
 		if err != nil {
-			return conn, err
+			return err
 		}
 	}
 	_, err = conn.Do("EXISTS", "somekey")
-	return conn, err
+	return err
+}
+
+// CreateRedisPool creates a new pool for a given Redis URL>
+// The CheckRedis is expected to return nil when given the same
+// parameter.
+func CreateRedisPool(s string) *redis.Pool {
+	redisURL, _ := url.Parse(s)
+
+	return &redis.Pool{
+		Dial: func() (redis.Conn, error) {
+			conn, err := redis.Dial("tcp", redisURL.Host)
+			if err != nil {
+				return nil, err
+			}
+			if redisURL.User != nil {
+				pass, ok := redisURL.User.Password()
+				if !ok {
+					pass = redisURL.User.Username()
+				}
+				_, err := conn.Do("AUTH", pass)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return conn, err
+		},
+		MaxIdle:     3,
+		IdleTimeout: 1 * time.Minute,
+	}
 }

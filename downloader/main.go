@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dutchcoders/goftp"
@@ -51,11 +52,11 @@ func main() {
 		}
 	}
 
-	redisConn, err := common.ConnectRedis(*redisURL)
-	if err != nil {
+	if err := common.CheckRedis(*redisURL); err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
-	defer redisConn.Close()
+	pool := common.CreateRedisPool(*redisURL)
+	defer pool.Close()
 
 	ftpConn, ftpURL, err := connectFtp(*ftpURL)
 	if err != nil {
@@ -66,33 +67,49 @@ func main() {
 		log.Fatalf("Could not cd to target directory: %s", err)
 	}
 
+	m := &sync.Mutex{}
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			m.Lock()
+			log.Printf("Noopping...")
+			ftpConn.Noop()
+			m.Unlock()
+		}
+	}()
 	for {
-		if !*force {
-			nextRun := lastRun(redisConn).Add(*frequency)
-			if nextRun.After(time.Now()) {
-				time.Sleep(nextRun.Sub(time.Now()))
-				continue
+		func() {
+			redisConn := pool.Get()
+			defer redisConn.Close()
+			if !*force {
+				nextRun := lastRun(redisConn).Add(*frequency)
+				if nextRun.After(time.Now()) {
+					time.Sleep(nextRun.Sub(time.Now()))
+					return
+				}
 			}
-		}
-		*force = false
+			*force = false
 
-		log.Printf("Downloading all the repos...")
-		repos := repos(redisConn)
-		for _, repo := range repos {
-			log.Printf("Downloading %s...", repo)
-			safeName := badCharacters.ReplaceAllString(repo, "_")
-			r, err := downloadRepository(repo)
-			if err != nil {
-				log.Printf("Error downloading repository: %s", err)
-				continue
-			}
+			log.Printf("Downloading all the repos...")
+			repos := repos(redisConn)
+			for _, repo := range repos {
+				log.Printf("Downloading %s...", repo)
+				safeName := badCharacters.ReplaceAllString(repo, "_")
+				r, err := downloadRepository(repo)
+				if err != nil {
+					log.Printf("Error downloading repository: %s", err)
+					continue
+				}
 
-			if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
-				log.Printf("Error uploading: %s", err)
+				m.Lock()
+				if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
+					log.Printf("Error uploading: %s", err)
+				}
+				m.Unlock()
 			}
-		}
-		log.Printf("Finished.")
-		timestampLastRun(redisConn)
+			log.Printf("Finished.")
+			timestampLastRun(redisConn)
+		}()
 	}
 }
 
@@ -164,7 +181,6 @@ func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
 
 func downloadRepository(path string) (io.Reader, error) {
 	repo := os.TempDir() + *namespace
-
 	if err := os.MkdirAll(repo, os.FileMode(0700)); err != nil {
 		return nil, err
 	}

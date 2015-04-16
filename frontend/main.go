@@ -60,13 +60,12 @@ func main() {
 		Endpoint:     github.Endpoint,
 	}
 
-	redisConn, err := common.ConnectRedis(*redisURL)
-	if err != nil {
+	if err := common.CheckRedis(*redisURL); err != nil {
 		log.Fatalf("Could not connect to redis: %s", err)
 	}
-	defer redisConn.Close()
-
-	root = context.WithValue(root, redisKey, redisConn)
+	pool := common.CreateRedisPool(*redisURL)
+	defer pool.Close()
+	root = context.WithValue(root, redisKey, pool)
 
 	http.HandleFunc("/active", active)
 	http.HandleFunc("/activate", activate)
@@ -92,7 +91,9 @@ func main() {
 }
 
 func active(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(redisKey).(redis.Conn)
+	pool := root.Value(redisKey).(*redis.Pool)
+	conn := pool.Get()
+	defer conn.Close()
 
 	vals, err := redis.Values(conn.Do("SMEMBERS", *namespace+":repos"))
 	if err != nil {
@@ -111,7 +112,9 @@ func active(w http.ResponseWriter, r *http.Request) {
 }
 
 func activate(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(redisKey).(redis.Conn)
+	pool := root.Value(redisKey).(*redis.Pool)
+	conn := pool.Get()
+	defer conn.Close()
 	name := r.FormValue("name")
 
 	if name == "" {
@@ -143,7 +146,9 @@ func deactivate(w http.ResponseWriter, r *http.Request) {
 }
 
 func listRepos(w http.ResponseWriter, r *http.Request) {
-	conn := root.Value(redisKey).(redis.Conn)
+	pool := root.Value(redisKey).(*redis.Pool)
+	conn := pool.Get()
+	defer conn.Close()
 
 	vals, err := redis.Values(conn.Do("SMEMBERS", *namespace+":known_repos"))
 	if err != nil {
@@ -209,7 +214,9 @@ func githubCallback(w http.ResponseWriter, r *http.Request) {
 
 func importRepos(ctx context.Context) {
 	ghAPI := ctx.Value(githubAPIKey).(*gh.Client)
-	conn := ctx.Value(redisKey).(redis.Conn)
+	pool := root.Value(redisKey).(*redis.Pool)
+	conn := pool.Get()
+	defer conn.Close()
 
 	ch := make(chan gh.Repository)
 	wg := &sync.WaitGroup{}
