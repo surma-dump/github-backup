@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dutchcoders/goftp"
@@ -66,6 +67,16 @@ func main() {
 		log.Fatalf("Could not cd to target directory: %s", err)
 	}
 
+	m := &sync.Mutex{}
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			m.Lock()
+			log.Printf("Noopping...")
+			ftpConn.Noop()
+			m.Unlock()
+		}
+	}()
 	for {
 		func() {
 			redisConn := pool.Get()
@@ -90,9 +101,11 @@ func main() {
 					continue
 				}
 
+				m.Lock()
 				if err := ftpConn.Stor(safeName+".tar.gz", r); err != nil {
 					log.Printf("Error uploading: %s", err)
 				}
+				m.Unlock()
 			}
 			log.Printf("Finished.")
 			timestampLastRun(redisConn)
@@ -168,7 +181,6 @@ func connectFtp(s string) (*goftp.FTP, *url.URL, error) {
 
 func downloadRepository(path string) (io.Reader, error) {
 	repo := os.TempDir() + *namespace
-
 	if err := os.MkdirAll(repo, os.FileMode(0700)); err != nil {
 		return nil, err
 	}
